@@ -1,0 +1,22 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: video_link_bot_development
+  username: postgres  # или ваш username
+  password: <%= ENV['DATABASE_PASSWORD'] %>
+  host: localhost
+  port: 5432
+
+test:
+  <<: *default
+  database: video_link_bot_test
+
+production:
+  <<: *default
+  database: video_link_bot_production
+  username: video_link_bot
+  password: <%= ENV['VIDEO_LINK_BOT_DATABASE_PASSWORD'] %>
