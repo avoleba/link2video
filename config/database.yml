@@ -6,7 +6,7 @@ default: &default
 development:
   <<: *default
   database: video_link_bot_development
-  username: postgres  # или ваш username
+  username: postgres
   password: <%= ENV['DATABASE_PASSWORD'] %>
   host: localhost
   port: 5432

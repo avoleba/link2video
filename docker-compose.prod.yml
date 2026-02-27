@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: video_link_bot_production
+      POSTGRES_USER: video_link_bot
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "80:80"
+    environment:
+      RAILS_ENV: production
+      RAILS_LOG_LEVEL: info
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      DATABASE_URL: postgres://video_link_bot:${DATABASE_PASSWORD}@db:5432/video_link_bot_production
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      SOLID_QUEUE_IN_PUMA: "true"
+    # запускаем веб и solid_queue в puma (SOLID_QUEUE_IN_PUMA=true),
+    # а сам бот — отдельным процессом
+    command: ["./bin/thrust", "./bin/rails", "server"]
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      RAILS_ENV: production
+      RAILS_LOG_LEVEL: info
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      DATABASE_URL: postgres://video_link_bot:${DATABASE_PASSWORD}@db:5432/video_link_bot_production
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    command: ["./bin/rails", "bot:start"]
+
+volumes:
+  postgres_data:
