@@ -5,6 +5,10 @@ class VideoRequest < ActiveRecord::Base
   PLATFORMS = { youtube: 0, instagram: 1, tiktok: 2, unknown: 3 }.freeze
   
   validates :url, presence: true
+
+  scope :completed, -> { where(status: STATUSES[:completed]) }
+  scope :processing, -> { where(status: STATUSES[:processing]) }
+  scope :failed, -> { where(status: STATUSES[:failed]) }
   
   before_validation :set_defaults
   
@@ -46,5 +50,9 @@ class VideoRequest < ActiveRecord::Base
   # Хелпер для названия платформы
   def platform_name
     PLATFORMS.key(platform)&.to_s&.capitalize || 'Unknown'
+  end
+
+  def status_name
+    STATUSES.key(status)&.to_s&.capitalize || status.to_s
   end
 end

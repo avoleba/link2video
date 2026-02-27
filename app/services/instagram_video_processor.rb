@@ -1,12 +1,10 @@
 class InstagramVideoProcessor
   class << self
     def get_video_for_telegram(url)
-      # Получаем информацию о посте
       video_info = get_instagram_info(url)
       
       return video_info if video_info[:error]
       
-      # Получаем прямую ссылку на видео
       video_url = decode_instagram_url(extract_video_url(video_info[:html], url))
       
       if video_url
@@ -16,9 +14,9 @@ class InstagramVideoProcessor
           title: video_info[:title] || "Instagram Video",
           author: video_info[:author] || "Instagram",
           thumbnail: video_info[:thumbnail],
-          video_url: video_url,  # Прямая ссылка на видео файл
+          video_url: video_url,
           is_video: true,
-          watch_url: url,  # Оригинальная ссылка
+          watch_url: url,
           message: "Instagram видео готово к просмотру в Telegram"
         }
       else
@@ -54,31 +52,7 @@ class InstagramVideoProcessor
       { error: "Instagram ошибка: #{e.message}" }
     end
     
-    def extract_video_url(html, original_url)
-      # Парсим JSON данные Instagram
-      # Instagram хранит информацию в window.__additionalDataLoaded
-      
-      # Вариант 1: Ищем video_url в JSON
-      if html.include?('video_url')
-        match = html.match(/"video_url":"([^"]+)"/)
-        return match[1].gsub('\\u0026', '&') if match
-      end
-      
-      # Вариант 2: Ищем в структуре данных
-      if html.include?('"video_versions"')
-        match = html.match(/"video_versions":\[.*?"url":"([^"]+)"/m)
-        return match[1].gsub('\\u0026', '&') if match
-      end
-      
-      # Вариант 3: Используем сторонний сервис
-      # Например: https://igram.io/api/
-      # Или: https://rapidapi.com/ (требует API ключ)
-      
-      nil
-    end
-
     def decode_instagram_url(encoded_url)
-      # Убираем все escape-последовательности
       decoded = encoded_url
         .gsub('\\/', '/')          # Убираем экранирование слешей
         .gsub('\\u0026', '&')      # Декодируем & из unicode
@@ -98,54 +72,32 @@ class InstagramVideoProcessor
       begin
         uri = URI.parse(url)
         
-        # Убираем стандартные порты
         if (uri.scheme == 'https' && uri.port == 443) || 
            (uri.scheme == 'http' && uri.port == 80)
           uri.port = nil
         end
         
-        # Проверяем, что хост есть
         return nil unless uri.host
         
-        # Возвращаем исправленный URL
         uri.to_s
         
       rescue URI::InvalidURIError => e
-        # Пробуем простое исправление
-        fixed = url
-          .gsub(/:443/, '')  # Убираем порт 443
-          .gsub(/:80/, '')   # Убираем порт 80
+        fixed = url.gsub(/:443/, '').gsub(/:80/, '')
         
-        # Проверяем, что это валидный URL
-        if fixed =~ /\Ahttps?:\/\//
-          fixed
-        else
-          nil
-        end
+        fixed =~ /\Ahttps?:\/\// ? fixed : nil
       end
     end
     
     def extract_video_url(html, original_url)
-      # Ищем video_url в JSON
       if html.include?('video_url')
-        # Ищем все совпадения
         matches = html.scan(/"video_url":"([^"]+)"/)
-        
-        puts "Найдено #{matches.size} video_url в HTML"
-        
-        # Берем последнее совпадение (обычно это самое актуальное)
+                
         if matches.any?
           encoded_url = matches.last[0]
-          puts "Найден URL (закодированный): #{encoded_url[0..100]}..."
-          
-          decoded_url = decode_instagram_url(encoded_url)
-          puts "Декодированный URL: #{decoded_url[0..100]}..." if decoded_url
-          
-          return decoded_url
+          return decode_instagram_url(encoded_url)
         end
       end
       
-      # Пробуем другие методы поиска
       [
         /"video_url":"([^"]+)"/,
         /"video_versions":\[.*?"url":"([^"]+)"/m,
@@ -154,10 +106,7 @@ class InstagramVideoProcessor
       ].each do |pattern|
         match = html.match(pattern)
         if match
-          encoded_url = match[1]
-          puts "Найден по паттерну: #{encoded_url[0..100]}..."
-          
-          decoded_url = decode_instagram_url(encoded_url)
+          decoded_url = decode_instagram_url(match[1])
           return decoded_url if decoded_url
         end
       end
