@@ -1,11 +1,10 @@
 # app/controllers/api/v1/video_requests_controller.rb
 module Api
   module V1
-    class VideoRequestsController < ApplicationController
+    class VideoRequestsController < ActionController::API
       def create
         request = VideoRequest.create!(video_request_params)
         
-        # Обрабатываем асинхронно
         VideoProcessorJob.perform_later(request.id)
         
         render json: {

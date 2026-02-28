@@ -22,11 +22,7 @@ services:
       RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
       DATABASE_URL: postgres://myapp:${DATABASE_PASSWORD}@db:5432/video_2_link_db
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      SOLID_QUEUE_IN_PUMA: "true"
-    # запускаем веб и solid_queue в puma (SOLID_QUEUE_IN_PUMA=true),
-    # а сам бот — отдельным процессом
-    command: ["./bin/thrust", "./bin/rails", "server"]
-
+    command: ["./bin/rails", "server", "-b", "0.0.0.0", "-p", "80"]
   bot:
     build: .
     restart: unless-stopped

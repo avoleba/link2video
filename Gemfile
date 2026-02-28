@@ -6,8 +6,6 @@ gem "puma", "~> 6.4"
 gem "tzinfo-data", platforms: %i[ mingw mswin x64_mingw jruby ]
 
 # Для бота
-gem "httparty"
-gem "nokogiri"
 gem "telegram-bot-ruby", "~> 0.19.0"
 gem "dotenv-rails"
 gem 'bootsnap', '>= 1.4.4', require: false
@@ -16,3 +14,4 @@ gem 'nokogiri'
 gem 'redis'
 gem 'sidekiq'
 gem 'video_info'
+gem "image_processing", "~> 1.2"
