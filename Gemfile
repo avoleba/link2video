@@ -15,3 +15,4 @@ gem 'redis'
 gem 'sidekiq'
 gem 'video_info'
 gem "image_processing", "~> 1.2"
+gem 'aux', '~> 0.3.0'

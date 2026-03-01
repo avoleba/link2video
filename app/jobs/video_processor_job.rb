@@ -3,16 +3,14 @@ class VideoProcessorJob < ActiveJob::Base
 
   def perform(request_id, processing_message_id = nil)
     request = VideoRequest.find(request_id)
+    return unless request
 
     request.update!(status: :processing)
 
-    video_info = VideoDownloader.get_video_info(request.url)
+    video_info = VideoDownloader.get_video_info(request.platform, request.url)
 
     if video_info[:error]
-      request.update!(
-        status: :failed,
-        error_message: video_info[:error]
-      )
+      request.update!(status: :failed, error_message: video_info[:error])
       TelegramResultSender.send_error(
         request: request,
         error: video_info[:error],
@@ -26,7 +24,7 @@ class VideoProcessorJob < ActiveJob::Base
         duration: video_info[:duration],
         thumbnail_url: video_info[:thumbnail],
         video_url: video_info[:video_url],
-        platform: (VideoRequest::PLATFORMS[video_info[:platform].to_sym] || VideoRequest::PLATFORMS[:unknown])
+        platform: (video_info[:platform]&.to_sym || :unknown)
       )
       TelegramResultSender.send_success(
         request: request,

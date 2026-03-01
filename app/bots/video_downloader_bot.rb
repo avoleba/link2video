@@ -1,7 +1,13 @@
 require 'telegram/bot'
 
 class VideoDownloaderBot
+  include Aux::Pluggable
+
   TOKEN = ENV['TELEGRAM_BOT_TOKEN']
+
+  # @!attribute [r] video_request_repository
+  #   @return [VideoRequestRepository]
+  resolve :video_request_repository, scope: nil
 
   def run
     puts "🤖 Запуск бота Video Downloader..."
@@ -60,11 +66,11 @@ class VideoDownloaderBot
     chat_id = message.chat.id
     url = message.text.strip
 
-    request = VideoRequest.create!(
+    request = video_request_repository.find_or_create_by(
       url: url,
       telegram_chat_id: chat_id,
       telegram_message_id: message.message_id,
-      status: VideoRequest::STATUSES[:processing]
+      status: :processing
     )
 
     processing_msg = bot.api.send_message(

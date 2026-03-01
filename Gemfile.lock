@@ -77,6 +77,9 @@ GEM
       uri (>= 0.13.1)
     ansi (1.5.0)
     ast (2.4.3)
+    aux (0.3.1)
+      activemodel (>= 6.1, < 9)
+      concurrent-ruby (~> 1.2, < 1.4)
     axiom-types (0.1.1)
       descendants_tracker (~> 0.0.4)
       ice_nine (~> 0.11.0)
@@ -297,6 +300,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
+  aux (~> 0.3.0)
   bootsnap (>= 1.4.4)
   dotenv-rails
   httparty

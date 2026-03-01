@@ -32,31 +32,19 @@ class TelegramResultSender
   end
 
   def send_success(request, video_info, processing_message_id)
-    if video_info[:platform] == :youtube
-      return send_youtube_mini_app(request.telegram_chat_id, video_info[:video_id])
-    end
-
-    text = build_video_info_text(request, video_info)
+    # if video_info[:platform] == :youtube
+    #   return send_youtube_mini_app(request.telegram_chat_id, video_info[:video_id])
+    # end
 
     if video_info[:video_url] && video_info[:platform] == :instagram
       send_instagram_video(request, video_info)
     elsif video_info[:video_url] && video_info[:platform] == :tiktok && direct_media_url?(video_info[:video_url])
       send_tik_tok_video(request, video_info)
-    else
-      text += "\n\n⬇️ *Ссылка для скачивания:* #{escape_md(video_info[:video_url])}" if video_info[:video_url]
     end
-
-    bot.api.send_message(
-      chat_id: request.telegram_chat_id,
-      text: text,
-      parse_mode: 'Markdown',
-      reply_markup: download_keyboard(request.id, video_info)
-    )
   end
 
   private
 
-  # Экранирование символов, ломающих Telegram Markdown (* _ ` [ )
   def escape_md(str)
     return '' if str.blank?
     str.to_s.gsub(/([\\*_`\[\]])/, "\\\\\\1")
@@ -64,20 +52,6 @@ class TelegramResultSender
 
   def bot
     @bot ||= Telegram::Bot::Client.new(ENV['TELEGRAM_BOT_TOKEN'])
-  end
-
-  def build_video_info_text(request, video_info)
-    <<~TEXT
-      ✅ *Видео найдено!*
-
-      📝 *Информация:*
-      🏷️ *Название:* #{escape_md(video_info[:title] || 'Не указано')}
-      👤 *Автор:* #{escape_md(video_info[:author] || 'Неизвестно')}
-      ⏱️ *Длительность:* #{format_duration(video_info[:duration])}
-      📊 *Платформа:* #{platform_emoji(video_info[:platform])} #{video_info[:platform].to_s.capitalize}
-
-      🔗 *Исходная ссылка:* #{escape_md(request.url)}
-    TEXT
   end
 
   def send_instagram_video(request, video_info)
@@ -91,7 +65,8 @@ class TelegramResultSender
       video: video_info[:video_url],
       caption: caption,
       parse_mode: 'Markdown',
-      supports_streaming: true
+      supports_streaming: true,
+      reply_markup: download_keyboard(request.id, video_info)
     )
   rescue Telegram::Bot::Exceptions::ResponseError => e
     Rails.logger.warn("Telegram send_video failed: #{e.message}")
@@ -110,7 +85,8 @@ class TelegramResultSender
       video: video_info[:video_url],
       caption: caption,
       parse_mode: 'Markdown',
-      supports_streaming: true
+      supports_streaming: true,
+      reply_markup: download_keyboard(request.id, video_info)
     )
   rescue Telegram::Bot::Exceptions::ResponseError => e
     Rails.logger.warn("Telegram send_video (TikTok) failed: #{e.message}")
@@ -245,28 +221,5 @@ class TelegramResultSender
     ]
 
     Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: buttons)
-  end
-
-  def format_duration(seconds)
-    return "Неизвестно" unless seconds
-
-    hours = seconds / 3600
-    minutes = (seconds % 3600) / 60
-    secs = seconds % 60
-
-    if hours > 0
-      format("%02d:%02d:%02d", hours, minutes, secs)
-    else
-      format("%02d:%02d", minutes, secs)
-    end
-  end
-
-  def platform_emoji(platform)
-    case platform.to_sym
-    when :youtube then '🎥'
-    when :instagram then '📸'
-    when :tiktok then '🎵'
-    else '🔗'
-    end
   end
 end
