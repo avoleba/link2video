@@ -26,7 +26,7 @@ class VideoDownloader
       InstagramVideoProcessor.get_video_for_telegram(url)
     end
     
-    def fetch_tiktok_video(url)
+    def get_tiktok_info(url)
       TikTokVideoProcessor.get_video_for_telegram(url)
     end   
   end

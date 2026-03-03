@@ -5,16 +5,14 @@ class TikTokVideoProcessor
       
       return video_info if video_info[:error]
       
-      video_url = extract_tiktok_video_url(video_info[:html], url)
-      
-      if video_url
+      if video_info[:video_url]
         {
           success: true,
           platform: :tiktok,
           title: video_info[:title] || "TikTok Video",
           author: video_info[:author] || "TikTok",
           thumbnail: video_info[:thumbnail],
-          video_url: video_url,
+          video_url: video_info[:video_url],
           is_video: true,
           watch_url: url,
           message: "TikTok видео готово к просмотру в Telegram"
@@ -27,121 +25,332 @@ class TikTokVideoProcessor
     private
     
     def get_tiktok_info(url)
-      begin
-        response = HTTParty.get(url, headers: tiktok_headers, follow_redirects: true)
+      # Пробуем разные методы получения видео
+      video_data = nil
+      
+      # 1. Сначала пробуем через API-подобные запросы (самый быстрый и надежный)
+      video_data = fetch_via_tiktok_api(url)
+      
+      # 2. Если не получилось, пробуем через мобильный user-agent (часто отдает чистый HTML)
+      video_data = fetch_via_mobile(url) if video_data.blank?
+      
+      # 3. Если всё еще нет, используем yt-dlp (самый надежный, но требует установки)
+      video_data = fetch_via_ytdlp(url) if video_data.blank?
+      
+      # 4. Последняя попытка - эмуляция браузера
+      video_data = fetch_via_browser_emulation(url) if video_data.blank?
+      
+      return { error: "Не удалось загрузить видео с TikTok" } if video_data.blank?
+      
+      video_data
+    rescue => e
+      { error: "TikTok ошибка: #{e.message}" }
+    end
+    
+    def fetch_via_tiktok_api(url)
+      # Извлекаем ID видео из URL
+      video_id = extract_tiktok_video_id(url)
+      return nil unless video_id
+      
+      # Пробуем разные эндпоинты TikTok API
+      api_urls = [
+        "https://www.tiktok.com/api/item/detail/?itemId=#{video_id}",
+        "https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/aweme/detail/?aweme_id=#{video_id}"
+      ]
+      
+      api_urls.each do |api_url|
+        response = HTTParty.get(api_url, headers: api_headers, timeout: 10)
         
         if response.success?
-          html = response.body
-          doc = Nokogiri::HTML(html)
+          data = response.parsed_response
           
-          meta = {
-            title: extract_meta_content(doc, 'og:title'),
-            description: extract_meta_content(doc, 'og:description'),
-            image: extract_meta_content(doc, 'og:image')
-          }
-          
-          direct_video_url = extract_tiktok_video_url(html, doc)
-          yt_data = fetch_tiktok_ytdlp_json(url)
-          direct_video_url = direct_video_url.presence || tiktok_url_from_ytdlp_json(yt_data)
-          
-          title = meta[:title].presence
-          author = extract_tiktok_author(meta[:title])
-          yt_meta = yt_data ? build_tiktok_metadata_from_ytdlp(yt_data) : nil
-          if yt_meta
-            title = yt_meta[:title] if title.blank? || title == 'TikTok Video'
-            author = yt_meta[:author] if author.blank?
+          # Парсим ответ в зависимости от структуры
+          if data.is_a?(Hash)
+            video_url = extract_video_url_from_api_response(data)
+            if video_url
+              return {
+                platform: :tiktok,
+                title: extract_title_from_api(data),
+                author: extract_author_from_api(data),
+                thumbnail: extract_thumbnail_from_api(data),
+                video_url: video_url,
+                duration: extract_duration_from_api(data)
+              }
+            end
           end
-          
-          {
-            platform: :tiktok,
-            title: title.presence || 'TikTok Video',
-            author: author,
-            description: meta[:description],
-            thumbnail: meta[:image],
-            video_url: direct_video_url.presence || url,
-            duration: yt_meta&.dig(:duration)
-          }
-        else
-          { error: "Не удалось загрузить страницу TikTok" }
         end
-      rescue => e
-        { error: "TikTok ошибка: #{e.message}" }
+      rescue
+        next # пробуем следующий эндпоинт
       end
-    end
-    
-    # Извлечение прямой ссылки на MP4 из HTML TikTok (JSON в странице)
-    def extract_tiktok_video_url(html, doc)
-      # 1) og:video:url — иногда есть
-      og_video = doc.at_css("meta[property='og:video:url']")
-      return og_video['content'] if og_video && og_video['content']&.match?(%r{\Ahttps?://})
-      
-      # 2) JSON в странице: url_list (часто в play_addr)
-      if html.include?('url_list')
-        # "url_list":["https:\/\/v16.tiktokcdn.com\/..."]
-        html.scan(/"url_list"\s*:\s*\[\s*"((?:https?:\\?\/\\?\/[^"]+))"/) do |m|
-          decoded = decode_tiktok_json_url(m[0])
-          return decoded if decoded&.include?('tiktokcdn')
-        end
-      end
-      # 3) play_addr / playAddr с полем url
-      html.scan(/"url"\s*:\s*"((?:https?:\\?\/\\?\/[^"]*tiktokcdn[^"]*))"/) do |m|
-        decoded = decode_tiktok_json_url(m[0])
-        return decoded if decoded
-      end
-      # 4) Любая ссылка на tiktokcdn с .mp4
-      match = html.match(/"((https?:\\?\/\\?\/[^"]*tiktokcdn[^"]*\.mp4[^"]*))"/)
-      return decode_tiktok_json_url(match[1]) if match
       
       nil
     end
     
-    def decode_tiktok_json_url(escaped)
-      return nil unless escaped
-      decoded = escaped.gsub('\\/', '/').gsub('\\u0026', '&').gsub('\\u003d', '=').gsub('\\u003D', '=')
-      decoded = decoded.gsub(/\\u([0-9a-fA-F]{4})/) { |_| [$1.hex].pack('U').force_encoding('UTF-8') }
-      decoded.match?(%r{\Ahttps?://}) ? decoded : nil
-    end
-    
-    def extract_tiktok_author(og_title)
-      return nil if og_title.blank?
-      # "Author Name (@user) | TikTok" -> "Author Name (@user)" или оставляем как есть
-      og_title.sub(/\s*\|\s*TikTok\s*$/i, '').strip.presence
-    end
-    
-    def tiktok_url_from_ytdlp_json(data)
-      return nil unless data
-      data['url'].presence || data.dig('requested_downloads', 0, 'url')
-    end
-
-    def build_tiktok_metadata_from_ytdlp(data)
-      return nil unless data
-      dur = data['duration']
-      duration_sec = dur && (d = dur.to_f) && d.positive? ? d.to_i : nil
+    def fetch_via_mobile(url)
+      # Мобильный user-agent часто получает более простую версию страницы
+      mobile_headers = {
+        'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language' => 'en-US,en;q=0.9',
+        'Connection' => 'keep-alive'
+      }
+      
+      response = HTTParty.get(url, headers: mobile_headers, follow_redirects: true, timeout: 15)
+      return nil unless response.success?
+      
+      html = response.body
+      
+      # Ищем video в HTML мобильной версии
+      video_url = extract_video_from_html(html)
+      return nil unless video_url
+      
+      # Извлекаем метаданные
+      doc = Nokogiri::HTML(html)
+      
       {
-        title: (data['title'].presence || data['fulltitle'].presence),
-        author: (data['uploader'].presence || data['creator'].presence || data['uploader_id'].presence&.then { "@#{_1}" }),
-        duration: duration_sec
+        platform: :tiktok,
+        title: extract_title_from_html(doc) || "TikTok Video",
+        author: extract_author_from_html(doc),
+        thumbnail: extract_thumbnail_from_html(doc),
+        video_url: video_url,
+        is_video: true
       }
     end
-
-    # Запасной вариант: получить URL через yt-dlp (если установлен)
-    def fetch_tiktok_url_via_ytdlp(url)
-      tiktok_url_from_ytdlp_json(fetch_tiktok_ytdlp_json(url))
-    end
-
-    def fetch_tiktok_ytdlp_json(url)
+    
+    def fetch_via_ytdlp(url)
       return nil unless system('which yt-dlp > /dev/null 2>&1')
-      json_str = `yt-dlp -j --no-download --no-warnings "#{url}" 2>/dev/null`
-      return nil if json_str.blank?
-      JSON.parse(json_str)
-    rescue JSON::ParserError, Errno::ENOENT
+      
+      begin
+        # Получаем информацию в JSON формате
+        json_str = `yt-dlp -j --no-playlist --no-warnings "#{url}" 2>/dev/null`
+        return nil if json_str.blank?
+        
+        data = JSON.parse(json_str)
+        
+        # Получаем прямую ссылку на видео
+        video_url = data['url'] || data.dig('requested_downloads', 0, 'url')
+        return nil unless video_url
+        
+        {
+          platform: :tiktok,
+          title: data['title'] || data['fulltitle'] || "TikTok Video",
+          author: data['uploader'] || data['creator'] || data['uploader_id'],
+          thumbnail: data['thumbnail'],
+          video_url: video_url,
+          duration: data['duration'],
+          is_video: true
+        }
+      rescue => e
+        nil
+      end
+    end
+    
+    def fetch_via_browser_emulation(url)
+      # Пробуем получить через сервисы-посредники
+      services = [
+        "https://tikmate.cc/download?url=#{url}",
+        "https://snaptik.app/download?url=#{url}"
+      ]
+      
+      services.each do |service_url|
+        response = HTTParty.get(service_url, headers: browser_headers, timeout: 15)
+        next unless response.success?
+        
+        # Ищем ссылку на видео в ответе
+        html = response.body
+        video_match = html.match(/https?:[^"'\s]+\.mp4[^"'\s]*/)
+        
+        if video_match
+          return {
+            platform: :tiktok,
+            title: "TikTok Video",
+            video_url: video_match[0],
+            is_video: true
+          }
+        end
+      rescue
+        next
+      end
+      
       nil
     end
     
+    # Вспомогательные методы
     
-    def extract_meta_content(doc, property)
-      meta = doc.at_css("meta[property='#{property}']")
-      meta ? meta['content'] : nil
+    def extract_tiktok_video_id(url)
+      # Из разных форматов URL TikTok
+      patterns = [
+        %r{/video/(\d+)},
+        %r{/v/(\d+)},
+        %r{/(\d+)(?:\?|$)},
+        %r{tiktok\.com/@[\w.-]+/video/(\d+)},
+        %r{vm\.tiktok\.com/(\w+)}
+      ]
+      
+      patterns.each do |pattern|
+        match = url.match(pattern)
+        return match[1] if match
+      end
+      
+      nil
+    end
+    
+    def extract_video_url_from_api_response(data)
+      # Пробуем разные пути в JSON ответе API
+      paths = [
+        ['itemInfo', 'itemStruct', 'video', 'playAddr'],
+        ['item_info', 'item_struct', 'video', 'play_addr'],
+        ['aweme_detail', 'video', 'play_addr'],
+        ['itemList', 0, 'video', 'playAddr'],
+        ['video', 'play_addr']
+      ]
+      
+      paths.each do |path|
+        value = data.dig(*path)
+        if value.is_a?(Hash)
+          # Может быть массив URL
+          url_list = value['url_list'] || value['urlList']
+          return url_list.first if url_list.is_a?(Array) && url_list.any?
+        elsif value.is_a?(String)
+          return value
+        end
+      end
+      
+      nil
+    end
+    
+    def extract_title_from_api(data)
+      paths = [
+        ['itemInfo', 'itemStruct', 'desc'],
+        ['item_info', 'item_struct', 'desc'],
+        ['aweme_detail', 'desc'],
+        ['itemList', 0, 'desc']
+      ]
+      
+      paths.each do |path|
+        title = data.dig(*path)
+        return title if title.present?
+      end
+      
+      nil
+    end
+    
+    def extract_author_from_api(data)
+      paths = [
+        ['itemInfo', 'itemStruct', 'author', 'uniqueId'],
+        ['item_info', 'item_struct', 'author', 'unique_id'],
+        ['aweme_detail', 'author', 'unique_id'],
+        ['itemList', 0, 'author', 'uniqueId']
+      ]
+      
+      paths.each do |path|
+        author = data.dig(*path)
+        return "@#{author}" if author.present?
+      end
+      
+      nil
+    end
+    
+    def extract_thumbnail_from_api(data)
+      paths = [
+        ['itemInfo', 'itemStruct', 'video', 'cover', 'url_list', 0],
+        ['item_info', 'item_struct', 'video', 'cover', 'url_list', 0],
+        ['aweme_detail', 'video', 'cover', 'url_list', 0],
+        ['itemList', 0, 'video', 'cover', 'urlList', 0]
+      ]
+      
+      paths.each do |path|
+        thumbnail = data.dig(*path)
+        return thumbnail if thumbnail.present?
+      end
+      
+      nil
+    end
+    
+    def extract_duration_from_api(data)
+      paths = [
+        ['itemInfo', 'itemStruct', 'video', 'duration'],
+        ['item_info', 'item_struct', 'video', 'duration'],
+        ['aweme_detail', 'video', 'duration'],
+        ['itemList', 0, 'video', 'duration']
+      ]
+      
+      paths.each do |path|
+        duration = data.dig(*path)
+        return duration.to_i if duration.present?
+      end
+      
+      nil
+    end
+    
+    def extract_video_from_html(html)
+      # Ищем прямые ссылки на видео в HTML
+      patterns = [
+        /"videoUrl":\s*"([^"]+)"/,
+        /"playAddr":\s*"([^"]+)"/,
+        /"src":\s*"([^"]+\.mp4[^"]*)"/,
+        /<video[^>]+src="([^"]+\.mp4[^"]*)"/
+      ]
+      
+      patterns.each do |pattern|
+        match = html.match(pattern)
+        return decode_json_string(match[1]) if match
+      end
+      
+      nil
+    end
+    
+    def extract_title_from_html(doc)
+      # Пробуем разные мета-теги
+      doc.at_css("meta[property='og:title']")&.[]('content') ||
+      doc.at_css("meta[name='title']")&.[]('content') ||
+      doc.at_css("title")&.text
+    end
+    
+    def extract_author_from_html(doc)
+      # Пробуем найти автора
+      author_meta = doc.at_css("meta[name='author']")&.[]('content')
+      if author_meta
+        return author_meta
+      end
+      
+      # Пробуем из og:title (часто формат "Author on TikTok")
+      og_title = doc.at_css("meta[property='og:title']")&.[]('content')
+      if og_title && og_title.include?(' on TikTok')
+        return og_title.split(' on TikTok').first
+      end
+      
+      nil
+    end
+    
+    def extract_thumbnail_from_html(doc)
+      doc.at_css("meta[property='og:image']")&.[]('content') ||
+      doc.at_css("meta[name='twitter:image']")&.[]('content')
+    end
+    
+    def decode_json_string(str)
+      return nil unless str
+      str.gsub('\\/', '/').gsub('\\u0026', '&').gsub('\\u003d', '=')
+    end
+    
+    def api_headers
+      {
+        'User-Agent' => 'com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; en_US; PBEM00; Build/N2G48H; Cronet/58.0.2991.0)',
+        'Accept' => 'application/json',
+        'Accept-Language' => 'en-US,en;q=0.9',
+        'Connection' => 'keep-alive'
+      }
+    end
+    
+    def browser_headers
+      {
+        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language' => 'en-US,en;q=0.5',
+        'Accept-Encoding' => 'gzip, deflate, br',
+        'Connection' => 'keep-alive',
+        'Upgrade-Insecure-Requests' => '1'
+      }
     end
   end
 end
