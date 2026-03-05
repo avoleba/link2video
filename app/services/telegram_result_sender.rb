@@ -38,8 +38,8 @@ class TelegramResultSender
 
     if video_info[:video_url] && video_info[:platform] == :instagram
       send_instagram_video(request, video_info)
-    elsif video_info[:video_url] && video_info[:platform] == :tiktok && direct_media_url?(video_info[:video_url])
-      send_tik_tok_video(request, video_info)
+    elsif video_info[:video_url] && video_info[:platform] == :tiktok
+      send_tik_tok_video(request, video_info, processing_message_id)
     end
   end
 
@@ -82,7 +82,7 @@ class TelegramResultSender
     # Сначала по URL; если Telegram не может скачать (403 и т.д.) — скачиваем сами и отправляем файлом
     bot.api.send_video(
       chat_id: request.telegram_chat_id,
-      video: video_info[:video_url],
+      video: Faraday::UploadIO.new(video_info[:video_url], 'video/mp4'),
       caption: caption,
       parse_mode: 'Markdown',
       supports_streaming: true,
@@ -90,79 +90,6 @@ class TelegramResultSender
     )
   rescue Telegram::Bot::Exceptions::ResponseError => e
     Rails.logger.warn("Telegram send_video (TikTok) failed: #{e.message}")
-    send_tiktok_video_as_file(request, video_info)
-  end
-
-  def send_tiktok_video_as_file(request, video_info)
-    caption = "🎵 *TikTok видео*\n\n"
-    caption += "🎬 *#{escape_md(video_info[:title])}*\n" if video_info[:title]
-    caption += "👤 #{escape_md(video_info[:author])}\n" if video_info[:author]
-    caption += "\n✅ Видео загружено в Telegram"
-
-    tempfile = download_tiktok_to_tempfile(video_info[:video_url], request.url)
-    return send_tik_tok_as_document(request, video_info) unless tempfile
-
-    bot.api.send_video(
-      chat_id: request.telegram_chat_id,
-      video: Faraday::UploadIO.new(tempfile.path, 'video/mp4'),
-      caption: caption,
-      parse_mode: 'Markdown',
-      supports_streaming: true
-    )
-  ensure
-    tempfile&.close
-    tempfile&.unlink
-  end
-
-  def send_tik_tok_as_document(request, video_info)
-    caption = "🎵 *TikTok видео*\n\n"
-    caption += "🎬 *#{escape_md(video_info[:title])}*\n" if video_info[:title]
-    caption += "👤 #{escape_md(video_info[:author])}\n" if video_info[:author]
-
-    return unless direct_media_url?(video_info[:video_url])
-
-    tempfile = download_tiktok_to_tempfile(video_info[:video_url], request.url)
-    if tempfile
-      bot.api.send_document(
-        chat_id: request.telegram_chat_id,
-        document: Faraday::UploadIO.new(tempfile.path, 'video/mp4', 'video.mp4'),
-        caption: caption,
-        parse_mode: 'Markdown'
-      )
-    else
-      bot.api.send_document(
-        chat_id: request.telegram_chat_id,
-        document: video_info[:video_url],
-        caption: caption,
-        parse_mode: 'Markdown'
-      )
-    end
-  ensure
-    tempfile&.close
-    tempfile&.unlink
-  end
-
-  def direct_media_url?(url)
-    return false if url.blank?
-    url.include?('tiktokcdn') || url.match?(/\.mp4(\?|$)/)
-  end
-
-  def download_tiktok_to_tempfile(video_url, referer)
-    return nil unless direct_media_url?(video_url)
-    headers = {
-      'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Referer' => referer.to_s
-    }
-    response = HTTParty.get(video_url, headers: headers, timeout: 60)
-    return nil unless response.success? && response.body.present?
-    temp = Tempfile.new(['tiktok', '.mp4'])
-    temp.binmode
-    temp.write(response.body)
-    temp.rewind
-    temp
-  rescue StandardError => e
-    Rails.logger.warn("TikTok download to tempfile failed: #{e.message}")
-    nil
   end
 
   def send_instagram_as_document(request, video_info)

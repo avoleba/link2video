@@ -63,13 +63,15 @@ class TikTokVideoProcessor
           
           if data.is_a?(Hash)
             video_url = extract_video_url_from_api_response(data)
-            if video_url
+            temp_file = download_video_now(video_url)
+
+            if temp_file
               return {
                 platform: :tiktok,
                 title: extract_title_from_api(data),
                 author: extract_author_from_api(data),
                 thumbnail: extract_thumbnail_from_api(data),
-                video_url: video_url,
+                video_url: temp_file.path,
                 duration: extract_duration_from_api(data)
               }
             end
@@ -95,6 +97,7 @@ class TikTokVideoProcessor
             
       video_url = extract_video_from_html(response.body)
       return nil unless video_url
+      temp_file = download_video_now(video_url)
       
       doc = Nokogiri::HTML(response.body)
       
@@ -103,7 +106,7 @@ class TikTokVideoProcessor
         title: extract_title_from_html(doc) || "TikTok Video",
         author: extract_author_from_html(doc),
         thumbnail: extract_thumbnail_from_html(doc),
-        video_url: video_url,
+        video_url: temp_file.path,
         is_video: true
       }
     end
@@ -119,13 +122,14 @@ class TikTokVideoProcessor
         
         video_url = data['url'] || data.dig('requested_downloads', 0, 'url')
         return nil unless video_url
+        temp_file = download_video_now(video_url)
         
         {
           platform: :tiktok,
           title: data['title'] || data['fulltitle'] || "TikTok Video",
           author: data['uploader'] || data['creator'] || data['uploader_id'],
           thumbnail: data['thumbnail'],
-          video_url: video_url,
+          video_url: temp_file.path,
           duration: data['duration'],
           is_video: true
         }
@@ -142,12 +146,13 @@ class TikTokVideoProcessor
         next unless response.success?
         
         video_match = response.body.match(/https?:[^"'\s]+\.mp4[^"'\s]*/)
+        temp_file = download_video_now(video_match[0])
         
         if video_match
           return {
             platform: :tiktok,
             title: "TikTok Video",
-            video_url: video_match[0],
+            video_url: temp_file.path,
             is_video: true
           }
         end
@@ -310,6 +315,25 @@ class TikTokVideoProcessor
                    .gsub('\u003D', '=')
       
       decoded.gsub(/\\u([0-9a-fA-F]{4})/) { |_| [$1.hex].pack('U') }
+    end
+
+    def download_video_now(url)
+      temp_file = Tempfile.new(['tiktok', '.mp4'])
+      temp_file.binmode
+      
+      URI.open(url, 
+        "User-Agent" => "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15",
+        "Referer" => "https://www.tiktok.com/",
+        "Accept" => "*/*"
+      ) { |video| temp_file.write(video.read) }
+      
+      temp_file.rewind
+      temp_file
+    rescue StandardError => e
+      puts "Download failed: #{e.message}"
+      temp_file.close if temp_file
+      temp_file.unlink if temp_file
+      nil
     end
 
     def api_headers
