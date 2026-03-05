@@ -64,6 +64,7 @@ class TikTokVideoProcessor
           if data.is_a?(Hash)
             video_url = extract_video_url_from_api_response(data)
             temp_file = download_video_now(video_url)
+            p temp_file
 
             if temp_file
               return {
@@ -77,7 +78,8 @@ class TikTokVideoProcessor
             end
           end
         end
-      rescue
+      rescue StandardError => e
+        Rails.logger.warn("fetch_via_tiktok_api: #{e.message}")
         next
       end
       
@@ -123,6 +125,7 @@ class TikTokVideoProcessor
         video_url = data['url'] || data.dig('requested_downloads', 0, 'url')
         return nil unless video_url
         temp_file = download_video_now(video_url)
+        p temp_file
         
         {
           platform: :tiktok,
@@ -133,7 +136,8 @@ class TikTokVideoProcessor
           duration: data['duration'],
           is_video: true
         }
-      rescue
+      rescue StandardError => e
+        Rails.logger.warn("fetch_via_ytdlp: #{e.message}")
         nil
       end
     end
