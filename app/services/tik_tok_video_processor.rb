@@ -25,19 +25,18 @@ class TikTokVideoProcessor
     private
     
     def get_tiktok_info(url)
-      # Пробуем разные методы получения видео
       video_data = nil
       
-      # 1. Сначала пробуем через API-подобные запросы (самый быстрый и надежный)
+      # через API-подобные запросы
       video_data = fetch_via_tiktok_api(url)
       
-      # 2. Если не получилось, пробуем через мобильный user-agent (часто отдает чистый HTML)
+      # через мобильный user-agent
       video_data = fetch_via_mobile(url) if video_data.blank?
       
-      # 3. Если всё еще нет, используем yt-dlp (самый надежный, но требует установки)
+      # yt-dlp
       video_data = fetch_via_ytdlp(url) if video_data.blank?
       
-      # 4. Последняя попытка - эмуляция браузера
+      # эмуляция браузера
       video_data = fetch_via_browser_emulation(url) if video_data.blank?
       
       return { error: "Не удалось загрузить видео с TikTok" } if video_data.blank?
@@ -48,11 +47,9 @@ class TikTokVideoProcessor
     end
     
     def fetch_via_tiktok_api(url)
-      # Извлекаем ID видео из URL
       video_id = extract_tiktok_video_id(url)
       return nil unless video_id
       
-      # Пробуем разные эндпоинты TikTok API
       api_urls = [
         "https://www.tiktok.com/api/item/detail/?itemId=#{video_id}",
         "https://api16-normal-c-useast1a.tiktokv.com/aweme/v1/aweme/detail/?aweme_id=#{video_id}"
@@ -64,7 +61,6 @@ class TikTokVideoProcessor
         if response.success?
           data = response.parsed_response
           
-          # Парсим ответ в зависимости от структуры
           if data.is_a?(Hash)
             video_url = extract_video_url_from_api_response(data)
             if video_url
@@ -80,14 +76,13 @@ class TikTokVideoProcessor
           end
         end
       rescue
-        next # пробуем следующий эндпоинт
+        next
       end
       
       nil
     end
     
     def fetch_via_mobile(url)
-      # Мобильный user-agent часто получает более простую версию страницы
       mobile_headers = {
         'User-Agent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1',
         'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -97,15 +92,11 @@ class TikTokVideoProcessor
       
       response = HTTParty.get(url, headers: mobile_headers, follow_redirects: true, timeout: 15)
       return nil unless response.success?
-      
-      html = response.body
-      
-      # Ищем video в HTML мобильной версии
-      video_url = extract_video_from_html(html)
+            
+      video_url = extract_video_from_html(response.body)
       return nil unless video_url
       
-      # Извлекаем метаданные
-      doc = Nokogiri::HTML(html)
+      doc = Nokogiri::HTML(response.body)
       
       {
         platform: :tiktok,
@@ -121,13 +112,11 @@ class TikTokVideoProcessor
       return nil unless system('which yt-dlp > /dev/null 2>&1')
       
       begin
-        # Получаем информацию в JSON формате
         json_str = `yt-dlp -j --no-playlist --no-warnings "#{url}" 2>/dev/null`
         return nil if json_str.blank?
         
         data = JSON.parse(json_str)
         
-        # Получаем прямую ссылку на видео
         video_url = data['url'] || data.dig('requested_downloads', 0, 'url')
         return nil unless video_url
         
@@ -140,25 +129,19 @@ class TikTokVideoProcessor
           duration: data['duration'],
           is_video: true
         }
-      rescue => e
+      rescue
         nil
       end
     end
     
     def fetch_via_browser_emulation(url)
-      # Пробуем получить через сервисы-посредники
-      services = [
-        "https://tikmate.cc/download?url=#{url}",
-        "https://snaptik.app/download?url=#{url}"
-      ]
+      services = ["https://tikmate.cc/download?url=#{url}", "https://snaptik.app/download?url=#{url}"]
       
       services.each do |service_url|
         response = HTTParty.get(service_url, headers: browser_headers, timeout: 15)
         next unless response.success?
         
-        # Ищем ссылку на видео в ответе
-        html = response.body
-        video_match = html.match(/https?:[^"'\s]+\.mp4[^"'\s]*/)
+        video_match = response.body.match(/https?:[^"'\s]+\.mp4[^"'\s]*/)
         
         if video_match
           return {
@@ -174,11 +157,8 @@ class TikTokVideoProcessor
       
       nil
     end
-    
-    # Вспомогательные методы
-    
+        
     def extract_tiktok_video_id(url)
-      # Из разных форматов URL TikTok
       patterns = [
         %r{/video/(\d+)},
         %r{/v/(\d+)},
@@ -196,7 +176,6 @@ class TikTokVideoProcessor
     end
     
     def extract_video_url_from_api_response(data)
-      # Пробуем разные пути в JSON ответе API
       paths = [
         ['itemInfo', 'itemStruct', 'video', 'playAddr'],
         ['item_info', 'item_struct', 'video', 'play_addr'],
@@ -208,7 +187,6 @@ class TikTokVideoProcessor
       paths.each do |path|
         value = data.dig(*path)
         if value.is_a?(Hash)
-          # Может быть массив URL
           url_list = value['url_list'] || value['urlList']
           return url_list.first if url_list.is_a?(Array) && url_list.any?
         elsif value.is_a?(String)
@@ -284,7 +262,6 @@ class TikTokVideoProcessor
     end
     
     def extract_video_from_html(html)
-      # Ищем прямые ссылки на видео в HTML
       patterns = [
         /"videoUrl":\s*"([^"]+)"/,
         /"playAddr":\s*"([^"]+)"/,
@@ -301,20 +278,17 @@ class TikTokVideoProcessor
     end
     
     def extract_title_from_html(doc)
-      # Пробуем разные мета-теги
       doc.at_css("meta[property='og:title']")&.[]('content') ||
       doc.at_css("meta[name='title']")&.[]('content') ||
       doc.at_css("title")&.text
     end
     
     def extract_author_from_html(doc)
-      # Пробуем найти автора
       author_meta = doc.at_css("meta[name='author']")&.[]('content')
       if author_meta
         return author_meta
       end
       
-      # Пробуем из og:title (часто формат "Author on TikTok")
       og_title = doc.at_css("meta[property='og:title']")&.[]('content')
       if og_title && og_title.include?(' on TikTok')
         return og_title.split(' on TikTok').first
@@ -330,9 +304,14 @@ class TikTokVideoProcessor
     
     def decode_json_string(str)
       return nil unless str
-      str.gsub('\\/', '/').gsub('\\u0026', '&').gsub('\\u003d', '=')
+      decoded = str.gsub('\u002F', '/')
+                   .gsub('\u0026', '&')
+                   .gsub('\u003d', '=')
+                   .gsub('\u003D', '=')
+      
+      decoded.gsub(/\\u([0-9a-fA-F]{4})/) { |_| [$1.hex].pack('U') }
     end
-    
+
     def api_headers
       {
         'User-Agent' => 'com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; en_US; PBEM00; Build/N2G48H; Cronet/58.0.2991.0)',
