@@ -81,9 +81,11 @@ class VideoDownloaderBot
 
     processing_msg = bot.api.send_message(
       chat_id: chat_id,
-      text: format(BotMessages::PROCESSING, url: url),
+      text: format(BotMessages::PROCESSING, url: request.url),
       parse_mode: 'HTML'
     )
+
+    puts "url: #{processing_msg}"
 
     VideoProcessorJob.perform_later(request.id, processing_msg['result']['message_id'])
   end
