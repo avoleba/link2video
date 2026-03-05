@@ -13,8 +13,10 @@ class VideoDownloaderBot
     puts "🤖 Запуск бота Video Downloader..."
 
     Telegram::Bot::Client.run(TOKEN) do |bot|
-      puts "message: #{message}"
-      bot.listen { |message| handle_message(bot, message) }
+      bot.listen do |message| 
+        puts "message: #{message}"
+        handle_message(bot, message)
+      end
     end
   end
 
