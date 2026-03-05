@@ -13,6 +13,7 @@ class VideoDownloaderBot
     puts "🤖 Запуск бота Video Downloader..."
 
     Telegram::Bot::Client.run(TOKEN) do |bot|
+      puts "message: #{message}"
       bot.listen { |message| handle_message(bot, message) }
     end
   end
@@ -65,6 +66,9 @@ class VideoDownloaderBot
   def handle_url(bot, message)
     chat_id = message.chat.id
     url = message.text.strip
+    puts "chat_id: #{chat_id}"
+    puts "url: #{url}"
+
 
     request = video_request_repository.find_or_create_by(
       url: url,
