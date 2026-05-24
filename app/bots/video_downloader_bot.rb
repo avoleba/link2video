@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'telegram/bot'
 
 class VideoDownloaderBot
@@ -9,11 +11,12 @@ class VideoDownloaderBot
   #   @return [VideoRequestRepository]
   resolve :video_request_repository, scope: nil
 
+  # @return [void]
   def run
     puts "🤖 Запуск бота Video Downloader..."
 
     Telegram::Bot::Client.run(TOKEN) do |bot|
-      bot.listen do |message| 
+      bot.listen do |message|
         puts "message: #{message}"
         handle_message(bot, message)
       end
@@ -22,6 +25,9 @@ class VideoDownloaderBot
 
   private
 
+  # @param bot [Telegram::Bot::Client]
+  # @param message [Telegram::Bot::Types::Message, Telegram::Bot::Types::CallbackQuery]
+  # @return [void]
   def handle_message(bot, message)
     case message
     when Telegram::Bot::Types::Message
@@ -37,6 +43,9 @@ class VideoDownloaderBot
     )
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param message [Telegram::Bot::Types::Message]
+  # @return [void]
   def handle_text_message(bot, message)
     if message.text.start_with?('/')
       handle_command(bot, message)
@@ -47,6 +56,9 @@ class VideoDownloaderBot
     end
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param message [Telegram::Bot::Types::Message]
+  # @return [void]
   def handle_command(bot, message)
     case message.text
     when '/start'
@@ -65,12 +77,14 @@ class VideoDownloaderBot
     end
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param message [Telegram::Bot::Types::Message]
+  # @return [void]
   def handle_url(bot, message)
     chat_id = message.chat.id
     url = message.text.strip
     puts "chat_id: #{chat_id}"
     puts "url: #{url}"
-
 
     request = video_request_repository.find_or_create_by(
       url: url,
@@ -90,6 +104,9 @@ class VideoDownloaderBot
     VideoProcessorJob.perform_later(request.id, processing_msg['result']['message_id'])
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param callback [Telegram::Bot::Types::CallbackQuery]
+  # @return [void]
   def handle_callback(bot, callback)
     case callback.data
     when /^download_(.+)$/
@@ -99,6 +116,9 @@ class VideoDownloaderBot
     end
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param chat_id [Integer]
+  # @return [void]
   def send_welcome_message(bot, chat_id)
     bot.api.send_message(
       chat_id: chat_id,
@@ -107,6 +127,9 @@ class VideoDownloaderBot
     )
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param chat_id [Integer]
+  # @return [void]
   def send_help_message(bot, chat_id)
     bot.api.send_message(
       chat_id: chat_id,
@@ -115,6 +138,9 @@ class VideoDownloaderBot
     )
   end
 
+  # @param bot [Telegram::Bot::Client]
+  # @param chat_id [Integer]
+  # @return [void]
   def send_supported_platforms(bot, chat_id)
     bot.api.send_message(
       chat_id: chat_id,
@@ -123,7 +149,10 @@ class VideoDownloaderBot
     )
   end
 
-  def send_stats(bot, chat_id, _user_id)
+  # @param bot [Telegram::Bot::Client]
+  # @param chat_id [Integer]
+  # @return [void]
+  def send_stats(bot, chat_id)
     requests = VideoRequest.where(telegram_chat_id: chat_id.to_s)
     bot.api.send_message(
       chat_id: chat_id,
@@ -132,6 +161,8 @@ class VideoDownloaderBot
     )
   end
 
+  # @param text [String]
+  # @return [Boolean]
   def valid_url?(text)
     uri = URI.parse(text)
     uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)

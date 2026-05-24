@@ -1,6 +1,11 @@
+# frozen_string_literal: true
+
 class VideoProcessorJob < ActiveJob::Base
   queue_as :default
 
+  # @param request_id [Integer]
+  # @param processing_message_id [Integer, nil]
+  # @return [void]
   def perform(request_id, processing_message_id = nil)
     request = VideoRequest.find(request_id)
     return unless request

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Тексты сообщений бота — вынесены в отдельный модуль для удобства правок
 module BotMessages
   WELCOME = <<~TEXT.freeze
@@ -64,6 +66,8 @@ module BotMessages
   ERROR_GENERIC = "⚠️ Произошла ошибка. Попробуйте позже."
   PROCESSING = "⏳ Обрабатываю ссылку...\n\n🔗 %{url}"
 
+  # @param requests [ActiveRecord::Relation<VideoRequest>]
+  # @return [String]
   def self.stats(requests)
     <<~TEXT
       📊 *Ваша статистика:*
@@ -78,6 +82,8 @@ module BotMessages
     TEXT
   end
 
+  # @param requests [ActiveRecord::Relation<VideoRequest>]
+  # @return [String]
   def self.recent_requests_summary(requests)
     recent = requests.order(created_at: :desc).limit(5)
     recent.map do |req|
@@ -85,6 +91,8 @@ module BotMessages
     end.join("\n")
   end
 
+  # @param time [Time, ActiveSupport::TimeWithZone]
+  # @return [String]
   def self.time_ago(time)
     minutes = ((Time.current - time) / 60).to_i
     if minutes < 60

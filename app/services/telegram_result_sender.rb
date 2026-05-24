@@ -1,13 +1,27 @@
+# frozen_string_literal: true
+
 # Отправка результатов обработки видео в Telegram
 class TelegramResultSender
+  # @param request [VideoRequest]
+  # @param error [String]
+  # @param processing_message_id [Integer, nil]
+  # @return [void]
   def self.send_error(request:, error:, processing_message_id: nil)
     new.send_error(request, error, processing_message_id)
   end
 
+  # @param request [VideoRequest]
+  # @param video_info [Hash{Symbol => Object}]
+  # @param processing_message_id [Integer, nil]
+  # @return [void]
   def self.send_success(request:, video_info:, processing_message_id: nil)
     new.send_success(request, video_info, processing_message_id)
   end
 
+  # @param request [VideoRequest]
+  # @param error [String]
+  # @param processing_message_id [Integer, nil]
+  # @return [void]
   def send_error(request, error, processing_message_id)
     if processing_message_id
       bot.api.delete_message(
@@ -31,6 +45,10 @@ class TelegramResultSender
     )
   end
 
+  # @param request [VideoRequest]
+  # @param video_info [Hash{Symbol => Object}]
+  # @param processing_message_id [Integer, nil]
+  # @return [void]
   def send_success(request, video_info, processing_message_id)
     # if video_info[:platform] == :youtube
     #   return send_youtube_mini_app(request.telegram_chat_id, video_info[:video_id])
@@ -45,15 +63,22 @@ class TelegramResultSender
 
   private
 
+  # @param str [String, nil]
+  # @return [String]
   def escape_md(str)
     return '' if str.blank?
+
     str.to_s.gsub(/([\\*_`\[\]])/, "\\\\\\1")
   end
 
+  # @return [Telegram::Bot::Client]
   def bot
     @bot ||= Telegram::Bot::Client.new(ENV['TELEGRAM_BOT_TOKEN'])
   end
 
+  # @param request [VideoRequest]
+  # @param video_info [Hash{Symbol => Object}]
+  # @return [void]
   def send_instagram_video(request, video_info)
     caption = "📸 *Instagram видео*\n\n"
     caption += "🎬 *#{escape_md(video_info[:title])}*\n" if video_info[:title]
@@ -73,13 +98,16 @@ class TelegramResultSender
     send_instagram_as_document(request, video_info)
   end
 
-  def send_tik_tok_video(request, video_info)
+  # @param request [VideoRequest]
+  # @param video_info [Hash{Symbol => Object}]
+  # @param _processing_message_id [Integer, nil]
+  # @return [void]
+  def send_tik_tok_video(request, video_info, _processing_message_id = nil)
     caption = "🎵 *TikTok видео*\n\n"
     caption += "🎬 *#{escape_md(video_info[:title])}*\n" if video_info[:title]
     caption += "👤 #{escape_md(video_info[:author])}\n" if video_info[:author]
     caption += "\n✅ Видео загружено в Telegram"
 
-    # Сначала по URL; если Telegram не может скачать (403 и т.д.) — скачиваем сами и отправляем файлом
     bot.api.send_video(
       chat_id: request.telegram_chat_id,
       video: Faraday::UploadIO.new(video_info[:video_url], 'video/mp4'),
@@ -92,6 +120,9 @@ class TelegramResultSender
     Rails.logger.warn("Telegram send_video (TikTok) failed: #{e.message}")
   end
 
+  # @param request [VideoRequest]
+  # @param video_info [Hash{Symbol => Object}]
+  # @return [void]
   def send_instagram_as_document(request, video_info)
     caption = "📸 *Instagram видео*\n\n"
     caption += "🎬 *#{escape_md(video_info[:title])}*\n" if video_info[:title]
@@ -107,6 +138,9 @@ class TelegramResultSender
     Rails.logger.warn("Telegram send_document failed: #{e.message}")
   end
 
+  # @param chat_id [Integer, String]
+  # @param video_id [String]
+  # @return [void]
   def send_youtube_mini_app(chat_id, video_id)
     web_app_url = "https://www.youtube.com/embed/#{video_id}?autoplay=1"
 
@@ -128,6 +162,9 @@ class TelegramResultSender
     )
   end
 
+  # @param request_id [Integer]
+  # @param video_info [Hash{Symbol => Object}]
+  # @return [Telegram::Bot::Types::InlineKeyboardMarkup]
   def download_keyboard(request_id, video_info)
     buttons = []
 
